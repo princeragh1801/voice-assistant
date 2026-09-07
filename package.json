@@ -1,0 +1,31 @@
+{
+  "name": "jarvis",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@9.2.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "npm run generate --workspace=apps/api",
+    "db:migrate": "npm run migrate --workspace=apps/api",
+    "db:studio": "npm run studio --workspace=apps/api"
+  },
+  "devDependencies": {
+    "turbo": "2.10.12",
+    "prettier": "3.9.6",
+    "eslint": "10.10.0",
+    "@eslint/js": "10.0.1",
+    "eslint-config-prettier": "10.1.8",
+    "typescript-eslint": "8.69.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "typescript": "6.0.3"
+  }
+}

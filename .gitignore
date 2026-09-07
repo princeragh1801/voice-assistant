@@ -1,0 +1,14 @@
+node_modules
+.env
+dist
+build
+.turbo
+*.log
+
+# Prisma generated client
+apps/api/src/generated
+
+# Editor/OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
