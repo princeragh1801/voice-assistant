@@ -1,7 +1,7 @@
 import { env } from '../../config/env';
 import { OpenRouterLLMService } from './openrouter-llm-service';
 
-export type { LLMService } from './types';
+export type { LLMChatOptions, LLMMessage, LLMRole, LLMService, LLMToolCall, ToolDefinition } from './types';
 export { LLMServiceError } from './errors';
 export { OpenRouterLLMService } from './openrouter-llm-service';
 

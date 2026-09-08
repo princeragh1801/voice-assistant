@@ -1,5 +1,4 @@
-import type { ChatMessage } from '@jarvis/types';
-import type { LLMService } from './types';
+import type { LLMChatOptions, LLMMessage, LLMService } from './types';
 import { LLMServiceError } from './errors';
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -15,14 +14,30 @@ interface OpenRouterErrorBody {
   error?: { code?: number; message?: string };
 }
 
+interface OpenRouterWireMessage {
+  role: string;
+  content: string | null;
+  tool_calls?: LLMMessage['toolCalls'];
+  tool_call_id?: string;
+}
+
 interface OpenRouterSuccessBody {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{ message?: OpenRouterWireMessage; finish_reason?: string }>;
+}
+
+function toWireMessage(message: LLMMessage): OpenRouterWireMessage {
+  return {
+    role: message.role,
+    content: message.content,
+    ...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
+    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+  };
 }
 
 export class OpenRouterLLMService implements LLMService {
   constructor(private readonly config: OpenRouterConfig) {}
 
-  async chat(messages: ChatMessage[]): Promise<ChatMessage> {
+  async chat(messages: LLMMessage[], options?: LLMChatOptions): Promise<LLMMessage> {
     let response: Response;
     try {
       response = await fetch(OPENROUTER_CHAT_URL, {
@@ -33,7 +48,14 @@ export class OpenRouterLLMService implements LLMService {
           ...(this.config.siteUrl ? { 'HTTP-Referer': this.config.siteUrl } : {}),
           ...(this.config.siteName ? { 'X-Title': this.config.siteName } : {}),
         },
-        body: JSON.stringify({ model: this.config.model, messages, stream: false }),
+        body: JSON.stringify({
+          model: this.config.model,
+          messages: messages.map(toWireMessage),
+          stream: false,
+          ...(options?.tools?.length
+            ? { tools: options.tools, tool_choice: options.toolChoice ?? 'auto' }
+            : {}),
+        }),
       });
     } catch (cause) {
       throw new LLMServiceError(
@@ -53,11 +75,18 @@ export class OpenRouterLLMService implements LLMService {
     }
 
     const body = (await response.json()) as OpenRouterSuccessBody;
-    const content = body?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') {
+    const message = body?.choices?.[0]?.message;
+    const hasContent = typeof message?.content === 'string';
+    const hasToolCalls = Array.isArray(message?.tool_calls) && message.tool_calls.length > 0;
+
+    if (!message || (!hasContent && !hasToolCalls)) {
       throw new LLMServiceError('OpenRouter returned an unexpected response shape', response.status);
     }
 
-    return { role: 'assistant', content };
+    return {
+      role: 'assistant',
+      content: message.content ?? null,
+      ...(hasToolCalls ? { toolCalls: message.tool_calls } : {}),
+    };
   }
 }

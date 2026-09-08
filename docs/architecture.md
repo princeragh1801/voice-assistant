@@ -1,53 +1,53 @@
 # Jarvis — Architecture & Roadmap
 
-This document describes where Jarvis is today and how it is planned to evolve. Everything below "Current State (Phase 0)" is **forward-looking documentation only** — none of it is implemented yet. It exists so that later phases have a coherent target to build toward instead of accumulating ad-hoc decisions.
+This document describes where Jarvis is today and how it is planned to evolve. Phases 0-4 below are **implemented and live-verified**. Everything from Phase 5 onward is **forward-looking documentation only** — not implemented yet. It exists so that later phases have a coherent target to build toward instead of accumulating ad-hoc decisions.
 
-## Current State (Phase 0 — Foundation)
+## Current State (through Phase 4 — Conversations & Memory)
 
 A Turborepo monorepo with npm workspaces:
 
 ```
 apps/
-  web/      React + Vite + TypeScript — fetches GET /api/health and renders the result
-  api/      Express + TypeScript — a single health endpoint, Prisma wired to Postgres
+  web/      React + Vite + TypeScript — chat UI (text + voice) over a persistent conversation
+  api/      Express + TypeScript — health, chat (LLM + tool-calling), tasks, conversation history
 packages/
-  types/    Shared TypeScript types (e.g. HealthCheckResponse)
+  types/    Shared TypeScript types (wire contracts between web and api)
   shared/   Shared runtime constants (e.g. API_ROUTES)
   config/   Shared ESLint (flat config) and TypeScript base configs
 ```
 
-Postgres runs via Docker Compose. Prisma is configured with **zero models** — Phase 0's job is to prove the full pipeline (schema → migration → generated client → connected query) works, not to model any domain data yet. `apps/api/src/` currently only has `config/`, `routes/`, `app.ts`, and `server.ts` — no business logic exists yet.
+Postgres (via Docker Compose) + Prisma model three domains: `Task` (Phase 3), and `Conversation`/`Message` (Phase 4). `apps/api/src/modules/` holds `llm/` (the `LLMService` abstraction over OpenRouter, including tool-calling support), `tasks/` (task CRUD + the tools exposed to the LLM), and `conversations/` (the single ongoing conversation's history, windowed for both LLM context and page-load hydration).
 
-No voice, no chat, no LLM calls, no task management, and no agents exist yet. `OPENROUTER_API_KEY` is present in `.env.example` but unused by any code.
+The web UI (`apps/web/src/components/Chat.tsx`) supports typed and voice (Web Speech API) input, auto-speaks replies to voice-initiated messages, and reloads conversation history from the backend on page load — refreshing the browser no longer loses the conversation. No calendar, no agent orchestration, and no coding agent exist yet.
 
 ## Planned Evolution
 
-### Phase 1 — Basic Chat
-Introduce an `LLMService` abstraction in `apps/api/src/modules/llm/` that talks to OpenRouter, so the rest of the app never calls a provider SDK directly:
+### Phase 1 — Basic Chat ✅
+An `LLMService` abstraction in `apps/api/src/modules/llm/` talks to OpenRouter, so the rest of the app never calls a provider SDK directly:
 
 ```
 Frontend chat UI → Express API → LLMService → OpenRouter → Response
 ```
-Swapping OpenRouter for OpenAI, Anthropic, or a local model later should mean writing a new implementation of `LLMService`, not rewriting call sites.
+Swapping OpenRouter for OpenAI, Anthropic, or a local model later means writing a new implementation of `LLMService`, not rewriting call sites.
 
-### Phase 2 — Voice
-Add speech-to-text and text-to-speech plus a microphone button in the UI:
+### Phase 2 — Voice ✅
+Speech-to-text and text-to-speech via the browser's native Web Speech API, plus a microphone button in the UI:
 
 ```
 Microphone → Speech-to-Text → Backend → LLM → Text response → Text-to-Speech → User
 ```
-No wake-word detection yet — that's a later refinement once push-to-talk works reliably.
+No wake-word detection — push-to-talk only. Auto-speaks a reply only when the triggering message was itself spoken; typed messages get a manual replay button instead.
 
-### Phase 3 — Task Management
-Persist tasks in Postgres (`Task` model: id, title, description, status, priority, dueDate, createdAt, updatedAt; statuses TODO/IN_PROGRESS/COMPLETED/CANCELLED). The LLM never touches the database directly — it selects from a fixed set of backend-validated tools:
+### Phase 3 — Task Management ✅
+Tasks persist in Postgres (`Task` model: id, title, description, status, priority, dueDate, createdAt, updatedAt; statuses TODO/IN_PROGRESS/COMPLETED/CANCELLED; priorities LOW/MEDIUM/HIGH). The LLM never touches the database directly — it selects from a fixed set of backend-validated tools:
 
 ```
-getTasks · createTask · updateTask · completeTask · getTodayTasks
+get_tasks · get_today_tasks · create_task · update_task · complete_task
 ```
-The LLM decides *which* tool to call; the backend executes it and turns the structured result back into natural language.
+The LLM decides *which* tool to call (looking up a task's id via `get_tasks` before acting on one it only knows by name); the backend validates arguments, executes the tool, and turns the structured result back into natural language. No `delete_task` tool is exposed to the LLM — deleting via an unconfirmed voice command is exactly the kind of action the "Human Approval" principle below would gate; the REST `DELETE` endpoint exists for direct API use only.
 
-### Phase 4 — Conversations & Memory
-Persist `Conversation` and `Message` so Jarvis has continuity across interactions, without storing every utterance forever — retention/summarization strategy to be decided when this phase starts.
+### Phase 4 — Conversations & Memory ✅
+A single ongoing `Conversation` persists its `Message`s in Postgres — no multi-conversation list/switcher, matching how a personal assistant is actually used. The backend is the source of truth: `POST /api/chat` takes just the newest message, loads recent history from Postgres itself, and `GET /api/conversation` lets the frontend reload that history on page load. Full history is never deleted, but only a recent sliding window (last 20 messages) is sent to the LLM on each call — bounding cost/latency as a conversation grows over weeks without needing real summarization yet. Only clean user/assistant turns are stored; tool-calling bookkeeping from Phase 3's loop never is.
 
 ### Phase 5 — Calendar
 Integrate a calendar provider so questions like "what meetings do I have today?" and "how busy am I?" work.
@@ -108,4 +108,4 @@ Parallel agent execution with dependencies, live status, retries, and result agg
 
 **Real-time updates via Socket.IO only where they add real value** — agent status, task status, agent logs, voice assistant state. Not sprinkled into every feature.
 
-**Database grows only when a phase needs it.** Today: none. Later, roughly in this order: `Task` (Phase 3) → `Conversation`/`Message` (Phase 4) → `Meeting`/`Integration` (Phase 5) → `Agent`/`AgentRun`/`ToolCall`/`Approval` (Phase 6+).
+**Database grows only when a phase needs it.** So far: `Task` (Phase 3), `Conversation`/`Message` (Phase 4). Later: `Meeting`/`Integration` (Phase 5) → `Agent`/`AgentRun`/`ToolCall`/`Approval` (Phase 6+).

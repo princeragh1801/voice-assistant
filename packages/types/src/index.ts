@@ -18,10 +18,19 @@ export interface ClientChatMessage {
   content: string;
 }
 
+/**
+ * POST /api/chat sends only the newest user message — the backend is the source of
+ * truth for conversation history and loads recent context from Postgres itself.
+ */
 export interface ChatRequestBody {
-  messages: ClientChatMessage[];
+  content: string;
 }
 
 export interface ChatResponseBody {
   message: ClientChatMessage;
+}
+
+/** GET /api/conversation — hydrates the frontend's display list on load (e.g. after a page refresh). */
+export interface ConversationResponseBody {
+  messages: ClientChatMessage[];
 }
